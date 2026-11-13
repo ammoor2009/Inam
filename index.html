@@ -16,7 +16,7 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 let W, H, S, dpr, w100;
 
-const TEXT = 'I love you Inam Siam';
+const TEXT = 'Inam Siam love you';
 const N = 64;        // number of "I love you" strips around the heart
 const D = 9;         // length of each strip (heart wall thickness)
 const H0 = 1.4;      // height of each strip
@@ -84,11 +84,11 @@ function frame(ms) {
     const xb = proj(rot({ x: P.x, y: P.y, z: z - side * D / 2 }));
     const ya = proj(rot({ x: P.x + dd.x * H0 / 2, y: P.y + dd.y * H0 / 2, z }));
     const yb = proj(rot({ x: P.x - dd.x * H0 / 2, y: P.y - dd.y * H0 / 2, z }));
-    items.push({
-      z: rc.z, c,
-      ex: { x: xa.x - xb.x, y: xa.y - xb.y },
-      ey: { x: ya.x - yb.x, y: ya.y - yb.y }
-    });
+    let ex = { x: xa.x - xb.x, y: xa.y - xb.y };
+    const ey = { x: ya.x - yb.x, y: ya.y - yb.y };
+    // if the strip is seen from behind (mirrored), flip it so the text reads normally
+    if (ex.x * ey.y - ex.y * ey.x < 0) ex = { x: -ex.x, y: -ex.y };
+    items.push({ z: rc.z, c, ex, ey });
   }
   items.sort((a, b) => b.z - a.z); // far first
 
