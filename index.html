@@ -14,74 +14,96 @@
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-let W, H, S;
+let W, H, S, dpr, w100;
+
+const TEXT = 'I love you';
+const N = 64;        // number of "I love you" strips around the heart
+const D = 9;         // length of each strip (heart wall thickness)
+const H0 = 1.4;      // height of each strip
+const FOCAL = 100;
+const AY = 0.6, AX = 0.25, AR = -0.25; // fixed view angles (the heart does not rotate)
+const SPEED = 0.03;  // flow speed of the words around the heart (smaller = slower)
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
+  dpr = window.devicePixelRatio || 1;
   W = canvas.clientWidth; H = canvas.clientHeight;
   canvas.width = W * dpr; canvas.height = H * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  S = Math.min(W, H) / 40;
+  S = Math.min(W, H) / 38;
+  ctx.font = 'bold 100px Arial, sans-serif';
+  w100 = ctx.measureText(TEXT).width;
 }
 window.addEventListener('resize', resize);
 resize();
 
-const TEXT = 'Inam Siam';
-const LAYERS = 6;      // number of heart layers (depth)
-const PER_LAYER = 18;  // texts per layer
-const DEPTH = 14;      // heart thickness
-const FOCAL = 90;
-
 function heart(t) {
   return {
     x: 16 * Math.pow(Math.sin(t), 3),
-    y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t))
+    y: -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) - 2.5
   };
 }
 
-function project(p, a) {
-  const x = p.x * Math.cos(a) + p.z * Math.sin(a);
-  const z = -p.x * Math.sin(a) + p.z * Math.cos(a);
-  const k = FOCAL / (FOCAL + z + 20);
-  return { x: W / 2 + x * S * k, y: H / 2 + (p.y + 1) * S * k, k, z };
+function rot(p) {
+  let x = p.x * Math.cos(AY) + p.z * Math.sin(AY);
+  let z = -p.x * Math.sin(AY) + p.z * Math.cos(AY);
+  let y = p.y;
+  const y2 = y * Math.cos(AX) - z * Math.sin(AX);
+  const z2 = y * Math.sin(AX) + z * Math.cos(AX);
+  const x3 = x * Math.cos(AR) - y2 * Math.sin(AR);
+  const y3 = x * Math.sin(AR) + y2 * Math.cos(AR);
+  return { x: x3, y: y3, z: z2 };
+}
+
+function proj(r) {
+  const k = FOCAL / (FOCAL + r.z + 30);
+  return { x: W / 2 + r.x * S * k, y: H / 2 + r.y * S * k };
 }
 
 function frame(ms) {
   const time = ms / 1000;
-  const angle = 0.6;             // fixed tilt: the heart itself does not rotate
-  const flow = time * 0.03;      // words slowly flowing along the heart outline
+  const flow = time * SPEED;
 
-  ctx.clearRect(0, 0, W, H);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, W, H);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
 
   const items = [];
-  for (let l = 0; l < LAYERS; l++) {
-    const z = (l / (LAYERS - 1) - 0.5) * DEPTH;
-    for (let i = 0; i < PER_LAYER; i++) {
-      const t = ((i / PER_LAYER) + flow + l * 0.01) * Math.PI * 2;
-      const h = heart(t), h2 = heart(t + 0.05);
-      const a = project({ x: h.x, y: h.y, z }, angle);
-      const b = project({ x: h2.x, y: h2.y, z }, angle);
-      items.push({ a, rot: Math.atan2(b.y - a.y, b.x - a.x) });
-    }
+  for (let i = 0; i < N; i++) {
+    const t = (i / N + flow) * Math.PI * 2;
+    const h = heart(t), h2 = heart(t + 0.02);
+    let dx = h2.x - h.x, dy = h2.y - h.y;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const side = h.x >= 0 ? 1 : -1;
+    const dd = { x: dx * side, y: dy * side };
+    const z = Math.sin(time * 0.7 + i * 0.9) * 0.8;
+    const P = { x: h.x, y: h.y, z };
+
+    const rc = rot(P);
+    const c = proj(rc);
+    const xa = proj(rot({ x: P.x, y: P.y, z: z + side * D / 2 }));
+    const xb = proj(rot({ x: P.x, y: P.y, z: z - side * D / 2 }));
+    const ya = proj(rot({ x: P.x + dd.x * H0 / 2, y: P.y + dd.y * H0 / 2, z }));
+    const yb = proj(rot({ x: P.x - dd.x * H0 / 2, y: P.y - dd.y * H0 / 2, z }));
+    items.push({
+      z: rc.z, c,
+      ex: { x: xa.x - xb.x, y: xa.y - xb.y },
+      ey: { x: ya.x - yb.x, y: ya.y - yb.y }
+    });
   }
-  items.sort((u, v) => v.a.z - u.a.z); // far first
+  items.sort((a, b) => b.z - a.z); // far first
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 100px Arial, sans-serif';
+  ctx.shadowColor = '#ff4fa3';
+  ctx.shadowBlur = 10;
 
   for (const it of items) {
-    const { a, rot } = it;
-    const fade = Math.max(0.25, Math.min(1, 0.5 + a.k * 0.5));
-    ctx.save();
-    ctx.translate(a.x, a.y);
-    ctx.rotate(rot);
-    ctx.font = 'bold ' + (S * 0.75 * a.k) + 'px Arial, sans-serif';
-    ctx.shadowColor = '#ff4fa3';
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = 'rgba(255,105,180,' + fade + ')';
+    const alpha = Math.max(0.35, Math.min(1, 0.8 - it.z * 0.02));
+    ctx.setTransform(it.ex.x * dpr, it.ex.y * dpr, it.ey.x * dpr, it.ey.y * dpr, it.c.x * dpr, it.c.y * dpr);
+    ctx.scale(1 / w100, 0.9 / 100);
+    ctx.fillStyle = 'rgba(255,110,185,' + alpha + ')';
     ctx.fillText(TEXT, 0, 0);
-    ctx.restore();
   }
   requestAnimationFrame(frame);
 }
